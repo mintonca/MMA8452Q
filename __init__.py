@@ -25,16 +25,27 @@ class MMA8452Q(object):
 
     WHO_AM_I = __register__(0x0d, True)
     XYZ_DATA_CFG = __register__(0x0e)
+    PL_STATUS = __register__(0x10)
+    PL_CFG = __register__(0x11)
+    PL_COUNT = __register__(0x12)
     CTRL_REG1 = __register__(0x2a)
     CTRL_REG4 = __register__(0x2d)
     CTRL_REG5 = __register__(0x2e)
 
     def activate(self):
-         self.CTRL_REG1 |= 1
+         self.CTRL_REG1 |= 0x01
     def standby(self):
          self.CTRL_REG1 &= ~0x01
+    @property
+    def is_active(self):
+         #TODO: use the SYSMOD register instead
+         return (self.CTRL_REG1 & 0x01) == 0x01
 
     def set_scale(self, scale):
+         if scale not in (2,4,8):
+            raise ValueError("invalid scale, must be 2, 4, or 8")
+         if self.is_active:
+            raise RuntimeError("must be in standby")
          cfg = self.XYZ_DATA_CFG
          cfg &= 0xFC
          cfg |= (scale >> 2)
@@ -43,10 +54,18 @@ class MMA8452Q(object):
          self._scf = float(self._scale)/float(1<<11)
 
     def set_output_data_rate(self, odr):
+         if self.is_active:
+            raise RuntimeError("must be in standby")
          cfg = self.CTRL_REG1
          cfg &= 0xCF
          cfg |= (odr << 3)
          self.CTRL_REG1 = cfg
+
+    def setup_pl(self):
+         if self.is_active:
+            raise RuntimeError("must be in standby")
+         self.PL_CFG |= 0x40
+         self.PL_COUNT = 0x50 
 
     @property
     def data(self):
@@ -77,6 +96,7 @@ class MMA8452Q(object):
          return property(getter, setter)
 
     INT_DRDY = __interrupt__(0)
+    INT_LNDPRT = __interrupt__(4)
 
     def enable_drdy_int(self): # for now default to pin INT2
          cfg = self.CTRL_REG4
